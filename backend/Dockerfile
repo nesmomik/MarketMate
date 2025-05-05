@@ -8,7 +8,7 @@ WORKDIR /app
 COPY . .
 
 # Ensure the .env file is copied
-COPY .env .env
+COPY .env .envewrewrerer
 
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
