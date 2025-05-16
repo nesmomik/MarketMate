@@ -4,25 +4,25 @@ provider "aws" {
 }
 
 # SSH Key Pair generieren
-#resource "aws_key_pair" "my_ssh_key" {
-  #key_name   = "my_ssh_key"  # Der Name des Schlüssels
-  #public_key = file("~/.ssh/id_rsa.pub")  # Pfad zum öffentlichen SSH-Schlüssel
+ #resource "aws_key_pair" "my_ssh_key" {
+  #key_name   = "thomasressel_terraform"  # Der Name des Schlüssels
+  #public_key = file("thomasressel_terraform.ppk")  # Pfad zum öffentlichen SSH-Schlüssel
 #}
 
 # ec2=aws_instance, ami ist mein Betrieb System und instance_type
-resource "aws_instance" "my_terraform_server" {
+resource "aws_instance" "ec2_instanz_terraform_thomasressel" {
   ami = "ami-0ecf75a98fe8519d7"  # Amazon Linux 2
   instance_type = "t2.micro"
-  key_name      = "terraform_key" # Verbindung zum ssh-key
+  key_name      = "thomasressel_terraform" # Verbindung zum ssh-key
   vpc_security_group_ids = [
   aws_security_group.ssh_access.id,
   aws_security_group.web_access.id
 ] # Verbindung zur Security Group mit SSH und WEB
 
-  iam_instance_profile = aws_iam_instance_profile.ec2_instance_profile.name #Verbindung mit IAM-Rolle
+  # iam_instance_profile = aws_iam_instance_profile.ec2_instance_profile.name #Verbindung mit IAM-Rolle
 
   tags = {
-    Name = "MyFirstServerWithTerraform" # Beschreibung
+    Name = "ec2_instanz_terraform_thomasressel" # Beschreibung
   }
 }
 # Default-VPC
@@ -32,7 +32,7 @@ data "aws_vpc" "default" {
 
 # Security Group für SSH-Zugriff
 resource "aws_security_group" "ssh_access" {
-  name        = "allow_ssh"
+  name        = "allow_ssh_terraform"
   description = "SSHFromAnywhereAllowed"
   vpc_id      = data.aws_vpc.default.id  # Default-VPC verwenden
 
@@ -75,15 +75,15 @@ resource "aws_security_group" "rds_sg" {
   }
 }
 
-
 # RDS PostgreSQL-Instance
-resource "aws_db_instance" "my_postgres" {
+resource "aws_db_instance" "terraform_rds_thomasressel" {
+  identifier             = "db-resource-terraform-thomasressel" # This sets the actual RDS instance name
   allocated_storage      = 20
   storage_type           = "gp2"
   engine                 = "postgres"
   engine_version         = "15.12"
   instance_class         = "db.t3.micro"
-  db_name                = "my_database"
+  db_name                = "db_virtual_terraform_thomasressel"
   username               = "postgres"
   password               = "postgres1234"  # In Produktion: Variable/Secret Manager
   parameter_group_name   = "default.postgres15"
@@ -92,7 +92,7 @@ resource "aws_db_instance" "my_postgres" {
   vpc_security_group_ids = [aws_security_group.rds_sg.id]
 
   tags = {
-    Name = "MyPostgresRDS"
+    Name = "db_resource_terraform_thomasressel_tag"
   }
 }
 
