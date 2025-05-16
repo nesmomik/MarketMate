@@ -1,6 +1,6 @@
 # S3_bucket erstellen
 resource "aws_s3_bucket" "avatars" {
-  bucket = "grocerymate-avatars-christinakloos"
+  bucket = "grocerymate-avatars-thomasressel"
 
   tags = {
     Name        = "grocerymate-avatars"
