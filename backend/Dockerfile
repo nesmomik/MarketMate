@@ -1,3 +1,4 @@
+# 1. create build image
 # get builder image with uv integrated
 FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim AS builder
 # use uv to optimize startup by pre-compiling Python files to bytecode
@@ -11,6 +12,7 @@ COPY pyproject.toml uv.lock ./
 # --no-install-project: don't install the app code yet (better caching)
 RUN uv sync --frozen --no-install-project --no-dev
 
+# 2. create final image
 # switch to the standard slim image
 FROM python:3.11-slim-bookworm
 # create a non-root user for security
