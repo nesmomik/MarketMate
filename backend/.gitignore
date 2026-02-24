@@ -1,6 +1,9 @@
 # dont need specific python version
 .python-version
 
+# ignore terraform secrets
+*.tfvars
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
