@@ -86,10 +86,10 @@ locals {
 }
 
 # create two ec2 instances
-resource "aws_instance" "web_server_1" {
+resource "aws_instance" "docker_host_1" {
   ami             = data.aws_ssm_parameter.al2023_latest_kernel.value
   instance_type   = "t3.micro"
-  security_groups = [aws_security_group.docker_flask_app_sg.name]
+  security_groups = [aws_security_group.docker_app_flask_sg.name]
   key_name        = "ec2-user-masterschool"
 
   # Attach the IAM Profile
@@ -98,10 +98,10 @@ resource "aws_instance" "web_server_1" {
   user_data = local.ec2_user_data
 }
 
-resource "aws_instance" "web_server_2" {
+resource "aws_instance" "docker_host_2" {
   ami             = data.aws_ssm_parameter.al2023_latest_kernel.value
   instance_type   = "t3.micro"
-  security_groups = [aws_security_group.docker_flask_app_sg.name]
+  security_groups = [aws_security_group.docker_app_flask_sg.name]
   key_name        = "ec2-user-masterschool"
 
   iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
@@ -110,7 +110,7 @@ resource "aws_instance" "web_server_2" {
 }
 
 # create security group for instances
-resource "aws_security_group" "docker_flask_app_sg" {
+resource "aws_security_group" "docker_app_flask_sg" {
   name        = "marketmate-dev-app-sg"
   description = "Security group for MarketMate dev Docker hosts"
   vpc_id      = data.aws_vpc.default_vpc.id
@@ -131,7 +131,9 @@ resource "aws_security_group" "docker_flask_app_sg" {
     cidr_blocks = ["${local.my_public_ip}/32"]
 
   }
+
   # cant omit egress rule in terraform 
+  # needed for fetching frontend zip and docker images
   egress {
     from_port   = 0
     to_port     = 0
@@ -145,20 +147,19 @@ resource "aws_db_instance" "marketmate_tf_db" {
   instance_class         = "db.t3.micro"
   vpc_security_group_ids = [aws_security_group.rds_sg.id]
 
-  snapshot_identifier = "marketmate-tf-db-snapshot"
+  snapshot_identifier = "marketmate-db-pre-destroy-snapshot"
 
   # prevents deletion via console or API
-  deletion_protection = true
+  deletion_protection = false
 
   # snapshot management
   skip_final_snapshot       = false
-  final_snapshot_identifier = "marketmate-tf-db-snapshot-pre-destroy"
+  final_snapshot_identifier = "marketmate-db-pre-destroy-snapshot"
 
   # prevents 'terraform destroy'
   lifecycle {
     prevent_destroy = false
   }
-
 }
 
 resource "aws_security_group" "rds_sg" {
@@ -170,7 +171,7 @@ resource "aws_security_group" "rds_sg" {
     from_port       = 5432
     to_port         = 5432
     protocol        = "tcp"
-    security_groups = [aws_security_group.docker_flask_app_sg.id]
+    security_groups = [aws_security_group.docker_app_flask_sg.id]
   }
 }
 
@@ -249,15 +250,15 @@ resource "aws_lb_target_group" "web_app_tg" {
   }
 }
 
-resource "aws_lb_target_group_attachment" "web_server_1" {
+resource "aws_lb_target_group_attachment" "docker_host_1" {
   target_group_arn = aws_lb_target_group.web_app_tg.arn
-  target_id        = aws_instance.web_server_1.id
+  target_id        = aws_instance.docker_host_1.id
   port             = 5000
 }
 
-resource "aws_lb_target_group_attachment" "web_server_2" {
+resource "aws_lb_target_group_attachment" "docker_host_2" {
   target_group_arn = aws_lb_target_group.web_app_tg.arn
-  target_id        = aws_instance.web_server_2.id
+  target_id        = aws_instance.docker_host_2.id
   port             = 5000
 }
 
@@ -288,11 +289,11 @@ output "alb_dns_name" {
 }
 
 output "docker_host_1_public_ip" {
-  value = aws_instance.web_server_1.public_ip
+  value = aws_instance.docker_host_1.public_ip
 }
 
 output "docker_host_2_public_ip" {
-  value = aws_instance.web_server_2.public_ip
+  value = aws_instance.docker_host_2.public_ip
 }
 
 # ecr repository
