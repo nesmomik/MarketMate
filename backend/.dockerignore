@@ -1,4 +1,24 @@
-.venv
-.uv
-__pycache__
-.git
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.swp
+
+# Virtual env
+.venv/
+
+# Local files
+*.log
+tmp/
+
+# Git
+.git/
+
+# Dotenv files
+.env
+.env.*
+
+# editor files
+.vscode/
+.idea/

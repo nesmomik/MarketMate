@@ -20,8 +20,9 @@ WORKDIR /app
 # copy the virtual environment from the builder stage
 # change ownership to our non-root user
 COPY --from=builder /app/.venv /app/.venv
-# copy source code and environment variables
-COPY . .
+# copy only the necessary files 
+COPY app/ ./app/
+COPY main.py .
 # set the PATH to the virtual environment
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app/.venv/lib/python3.11/site-packages"
