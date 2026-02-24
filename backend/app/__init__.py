@@ -36,10 +36,7 @@ class Config:
     POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
     POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
 
-    POSTGRES_URI = os.getenv("POSTGRES_URI", "postgresql://postgres:postgres@localhost:5432/postgres")
-
-    if not POSTGRES_URI:
-        raise ValueError("POSTGRES_URI environment variable is not set.")
+    POSTGRES_URI = os.getenv("POSTGRES_URI", f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}")
 
     @classmethod
     def is_rds(cls):
