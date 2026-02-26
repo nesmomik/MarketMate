@@ -58,10 +58,11 @@ data "aws_subnets" "default_subnet" {
   }
 }
 
-# define local variables for user_data
-# get some values for different resource types from the AWS provider 
+# local variables
 locals {
-  # chomp removes trailing new lines
+  # set project root relative to the location of the main.tf file 
+  project_root = abspath("${path.root}/..")
+   # chomp removes trailing new lines
   my_public_ip  = chomp(data.http.my_public_ip.response_body)
   ec2_user_data = <<-EOF
     #!/bin/bash
@@ -75,6 +76,9 @@ locals {
     docker run -d \
       --name marketmate-app \
       -p 5000:5000 \
+      -e S3_BUCKET_NAME=marketmate-avatars \
+      -e S3_REGION=eu-central-1 \
+      -e USE_S3_STORAGE=true \
       -e POSTGRES_USER="${var.app_db_user}" \
       -e POSTGRES_PASSWORD="${var.postgres_password}" \
       -e POSTGRES_DB="${var.app_db_name}" \
@@ -147,7 +151,7 @@ resource "aws_db_instance" "marketmate_tf_db" {
   instance_class         = "db.t3.micro"
   vpc_security_group_ids = [aws_security_group.rds_sg.id]
 
-  snapshot_identifier = "marketmate-db-pre-destroy-snapshot"
+  snapshot_identifier = "marketmate-tf-db-snapshot-pre-destroy"
 
   # prevents deletion via console or API
   deletion_protection = false
@@ -176,25 +180,20 @@ resource "aws_security_group" "rds_sg" {
 }
 
 # create S3 bucket
-resource "aws_s3_bucket" "bucket" {
-  bucket_prefix = "devops-directive-web-app-data"
-  force_destroy = true
-}
+resource "aws_s3_bucket" "avatars" {
+  bucket = "marketmate-avatars"
 
-resource "aws_s3_bucket_versioning" "bucket_versioning" {
-  bucket = aws_s3_bucket.bucket.id
-  versioning_configuration {
-    status = "Enabled"
+  tags = {
+    Name        = "marketmate-avatars"
   }
 }
 
-resource "aws_s3_bucket_server_side_encryption_configuration" "bucket_crypto_conf" {
-  bucket = aws_s3_bucket.bucket.bucket
-  rule {
-    apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
-    }
-  }
+resource "aws_s3_object" "logo" {
+  bucket = aws_s3_bucket.avatars.id
+  key    = "avatars/user_default.png"
+  source = "${local.project_root}/avatar/user_default.png"
+  # check if file changed
+  etag   = filemd5("${local.project_root}/avatar/user_default.png")
 }
 
 # set up load balancer
@@ -326,8 +325,37 @@ resource "aws_ecr_lifecycle_policy" "cleanup" {
   })
 }
 
-# create am role for the instances to fetch the container from ecr
-resource "aws_iam_role" "ec2_ecr_role" {
+# create iam role for the instances for S3 Read/Write
+resource "aws_iam_policy" "s3_avatar_policy" {
+  name        = "marketmate-s3-avatar-policy"
+  description = "Allows EC2 instances to read and write avatars"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          "${aws_s3_bucket.avatars.arn}",
+          "${aws_s3_bucket.avatars.arn}/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "s3_access_attachment" {
+  role       = aws_iam_role.marketmate_app_role.name
+  policy_arn = aws_iam_policy.s3_avatar_policy.arn
+}
+
+# create iam role for the instances to fetch the container from ecr
+resource "aws_iam_role" "marketmate_app_role" {
   name = "marketmate-ec2-ecr-role"
 
   assume_role_policy = jsonencode({
@@ -346,18 +374,18 @@ resource "aws_iam_role" "ec2_ecr_role" {
 
 # attach the standard ReadOnly policy
 resource "aws_iam_role_policy_attachment" "ecr_readonly" {
-  role       = aws_iam_role.ec2_ecr_role.name
+  role       = aws_iam_role.marketmate_app_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
 # attach the SSM managed core policy for ssh access
 resource "aws_iam_role_policy_attachment" "ssm_managed" {
-  role       = aws_iam_role.ec2_ecr_role.name
+  role       = aws_iam_role.marketmate_app_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 # create the instance profile 
 resource "aws_iam_instance_profile" "ec2_profile" {
   name = "marketmate-ec2-profile"
-  role = aws_iam_role.ec2_ecr_role.name
+  role = aws_iam_role.marketmate_app_role.name
 }
