@@ -261,7 +261,7 @@ resource "aws_lb_listener_rule" "block_list_1" {
 }
 
 # block list part 2
-resource "aws_lb_listener_rule" "block_list_1" {
+resource "aws_lb_listener_rule" "block_list_2" {
   listener_arn = aws_lb_listener.http.arn
   priority     = 2
 
@@ -319,10 +319,11 @@ resource "aws_lb_listener_rule" "global_block_list" {
 }
 
 resource "aws_lb_target_group" "web_app_tg" {
-  name     = "web-app-target-group"
+  name_prefix = "webapp"  
   port     = 5000
   protocol = "HTTP"
   vpc_id   = data.aws_vpc.default_vpc.id
+
   health_check {
     path                = "/health"
     protocol            = "HTTP"
@@ -331,6 +332,10 @@ resource "aws_lb_target_group" "web_app_tg" {
     timeout             = 3
     healthy_threshold   = 2
     unhealthy_threshold = 2
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
