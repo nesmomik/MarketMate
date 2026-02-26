@@ -249,13 +249,7 @@ resource "aws_lb_listener_rule" "block_list_1" {
 
   condition {
     path_pattern {
-      values = [
-        "*.php*",
-        "*/vendor/*",
-        "*/.env*",
-        "*/.git*",
-        "/wp-admin*"
-      ]
+      values = ["*.php", "/vendor/*", "/.env*", "/.git*", "/wp-admin*"]
     }
   }
 }
@@ -276,44 +270,7 @@ resource "aws_lb_listener_rule" "block_list_2" {
 
   condition {
     path_pattern {
-      values = [
-        "/wp-login*",
-        "*/config.php",
-        "/cgi-bin/*",
-        "*/.aws/*",
-        "*/.ssh/*"
-      ]
-    }
-  }
-}
-
-resource "aws_lb_listener_rule" "global_block_list" {
-  listener_arn = aws_lb_listener.http.arn
-  priority     = 1 
-
-  action {
-    type = "fixed-response"
-    fixed_response {
-      content_type = "text/plain"
-      message_body = "Not Found"
-      status_code  = "404" 
-    }
-  }
-
-  condition {
-    path_pattern {
-      values = [
-        "*.php*",       
-        "*/vendor/*",   
-        "*/.env*",      
-        "*/.git*",      
-        "/wp-admin*",   
-        "/wp-login*",   
-        "*/config.php", 
-        "/cgi-bin/*",   
-        "*/.aws/*",     
-        "*/.ssh/*"      
-      ]
+      values = ["/wp-login*", "/config.php*", "/cgi-bin/*", "/.aws/*", "/.ssh/*"]
     }
   }
 }
@@ -328,7 +285,7 @@ resource "aws_lb_target_group" "web_app_tg" {
     path                = "/health"
     protocol            = "HTTP"
     matcher             = "200"
-    interval            = 30
+    interval            = 60
     timeout             = 3
     healthy_threshold   = 2
     unhealthy_threshold = 2
