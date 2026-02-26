@@ -84,7 +84,7 @@ locals {
       -e POSTGRES_DB="${var.app_db_name}" \
       -e POSTGRES_HOST="${aws_db_instance.marketmate_tf_db.address}" \
       -e POSTGRES_PORT="5432" \
-      -e JWT_SECRET="${var.jwt_secret_key}" \
+      -e JWT_SECRET_KEY="${var.jwt_secret_key}" \
       "${aws_ecr_repository.app_repo.repository_url}:latest"
   EOF
 }
