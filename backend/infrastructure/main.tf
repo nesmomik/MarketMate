@@ -15,6 +15,20 @@ terraform {
   }
 }
 
+# output variables for testing
+output "alb_dns_name" {
+  value = aws_lb.load_balancer.dns_name
+}
+
+output "docker_host_1_public_ip" {
+  value = aws_instance.docker_host_1.public_ip
+}
+
+output "docker_host_2_public_ip" {
+  value = aws_instance.docker_host_2.public_ip
+}
+
+# input variables stored in terraform.tfvars
 variable "postgres_password" {
   type = string
   # hides the value in console outputs
@@ -197,6 +211,10 @@ resource "aws_s3_object" "logo" {
 }
 
 # set up load balancer
+# the load balancer is the entry point
+# - looks at the request path and decides what to do with the incoming traffic
+#   according to matching listener rules and their priority
+
 resource "aws_lb" "load_balancer" {
   name               = "web-app-lb"
   load_balancer_type = "application"
@@ -327,19 +345,6 @@ resource "aws_security_group" "load_balancer_sg" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-}
-
-# output for testing
-output "alb_dns_name" {
-  value = aws_lb.load_balancer.dns_name
-}
-
-output "docker_host_1_public_ip" {
-  value = aws_instance.docker_host_1.public_ip
-}
-
-output "docker_host_2_public_ip" {
-  value = aws_instance.docker_host_2.public_ip
 }
 
 # ecr repository
