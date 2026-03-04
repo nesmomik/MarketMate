@@ -20,12 +20,16 @@ output "alb_dns_name" {
   value = aws_lb.load_balancer.dns_name
 }
 
-output "docker_host_1_public_ip" {
-  value = aws_instance.docker_host_1.public_ip
+output "docker_host_1_private_ip" {
+  value = aws_instance.docker_host_1.private_ip
 }
 
-output "docker_host_2_public_ip" {
-  value = aws_instance.docker_host_2.public_ip
+output "docker_host_2_private_ip" {
+  value = aws_instance.docker_host_2.private_ip
+}
+
+output "nat_instance_public_ip" {
+  value = aws_instance.nat_instance.public_ip
 }
 
 # input variables stored in terraform.tfvars
@@ -61,25 +65,190 @@ data "http" "my_public_ip" {
 
   url = "https://checkip.amazonaws.com"
 }
-# reference default vpc and subnet
-data "aws_vpc" "default_vpc" {
-  default = true
-}
-data "aws_subnets" "default_subnet" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default_vpc.id]
+# create new VPC
+resource "aws_vpc" "marketmate_vpc" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  tags = {
+    Name = "marketmate-vpc"
   }
+}
+
+# public subnets for load balancer
+resource "aws_subnet" "public_subnet_1a" {
+  vpc_id                  = aws_vpc.marketmate_vpc.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = "eu-central-1a"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "marketmate-public-1a"
+  }
+}
+
+resource "aws_subnet" "public_subnet_1b" {
+  vpc_id                  = aws_vpc.marketmate_vpc.id
+  cidr_block              = "10.0.2.0/24"
+  availability_zone       = "eu-central-1b"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "marketmate-public-1b"
+  }
+}
+
+# private subnets for ec2 and rds
+resource "aws_subnet" "private_subnet_1a" {
+  vpc_id            = aws_vpc.marketmate_vpc.id
+  cidr_block        = "10.0.11.0/24"
+  availability_zone = "eu-central-1a"
+
+  tags = {
+    Name = "marketmate-private-1a"
+  }
+}
+
+resource "aws_subnet" "private_subnet_1b" {
+  vpc_id            = aws_vpc.marketmate_vpc.id
+  cidr_block        = "10.0.12.0/24"
+  availability_zone = "eu-central-1b"
+
+  tags = {
+    Name = "marketmate-private-1b"
+  }
+}
+
+# internet gateway
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.marketmate_vpc.id
+
+  tags = {
+    Name = "marketmate-igw"
+  }
+}
+
+# nat instance and jump box to provide 
+# internet and ssh access to the docker hosts
+resource "aws_security_group" "nat_sg" {
+  name   = "marketmate-nat-sg"
+  vpc_id = aws_vpc.marketmate_vpc.id
+
+  ingress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = [aws_vpc.marketmate_vpc.cidr_block]
+  }
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["${local.my_public_ip}/32"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "marketmate-nat-sg"
+  }
+}
+
+resource "aws_instance" "nat_instance" {
+  ami                    = data.aws_ssm_parameter.al2023_latest_kernel.value
+  instance_type          = "t3.micro"
+  key_name               = "ec2-user-masterschool"
+  subnet_id              = aws_subnet.public_subnet_1a.id
+  vpc_security_group_ids = [aws_security_group.nat_sg.id]
+  source_dest_check      = false
+
+  user_data = <<-EOF
+    #!/bin/bash
+    echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
+    sysctl -p
+    yum install iptables-services -y
+    systemctl enable iptables
+    systemctl start iptables
+    iptables -F FORWARD
+    iptables -I FORWARD 1 -j ACCEPT
+    ETH_IFACE=$(ip route show default | awk '/default/ {print $5}')
+    iptables -t nat -A POSTROUTING -o $ETH_IFACE -j MASQUERADE
+    iptables-save > /etc/sysconfig/iptables
+  EOF
+
+  tags = {
+    Name = "marketmate-nat-instance"
+  }
+
+  depends_on = [aws_internet_gateway.igw]
+}
+
+# route tables
+resource "aws_route_table" "public_rt" {
+  vpc_id = aws_vpc.marketmate_vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+
+  tags = {
+    Name = "marketmate-public-rt"
+  }
+}
+
+resource "aws_route_table_association" "public_subnet_1a" {
+  subnet_id      = aws_subnet.public_subnet_1a.id
+  route_table_id = aws_route_table.public_rt.id
+}
+
+resource "aws_route_table_association" "public_subnet_1b" {
+  subnet_id      = aws_subnet.public_subnet_1b.id
+  route_table_id = aws_route_table.public_rt.id
+}
+
+resource "aws_route_table" "private_rt" {
+  vpc_id = aws_vpc.marketmate_vpc.id
+
+  route {
+    cidr_block           = "0.0.0.0/0"
+    network_interface_id = aws_instance.nat_instance.primary_network_interface_id
+  }
+
+  tags = {
+    Name = "marketmate-private-rt"
+  }
+}
+
+resource "aws_route_table_association" "private_subnet_1a" {
+  subnet_id      = aws_subnet.private_subnet_1a.id
+  route_table_id = aws_route_table.private_rt.id
+}
+
+resource "aws_route_table_association" "private_subnet_1b" {
+  subnet_id      = aws_subnet.private_subnet_1b.id
+  route_table_id = aws_route_table.private_rt.id
 }
 
 # local variables
 locals {
   # set project root relative to the location of the main.tf file 
   project_root = abspath("${path.root}/..")
-   # chomp removes trailing new lines
+  # chomp removes trailing new lines
   my_public_ip  = chomp(data.http.my_public_ip.response_body)
   ec2_user_data = <<-EOF
     #!/bin/bash
+    until curl -sS --connect-timeout 5 https://google.com > /dev/null; do
+      echo "Waiting for internet connection..."
+      sleep 5
+    done
     yum update -y
     yum install -y docker
     systemctl start docker
@@ -105,32 +274,46 @@ locals {
 
 # create two ec2 instances
 resource "aws_instance" "docker_host_1" {
-  ami             = data.aws_ssm_parameter.al2023_latest_kernel.value
-  instance_type   = "t3.micro"
-  security_groups = [aws_security_group.docker_app_flask_sg.name]
-  key_name        = "ec2-user-masterschool"
+  ami                    = data.aws_ssm_parameter.al2023_latest_kernel.value
+  instance_type          = "t3.micro"
+  vpc_security_group_ids = [aws_security_group.docker_app_flask_sg.id]
+  key_name               = "ec2-user-masterschool"
+  subnet_id              = aws_subnet.private_subnet_1a.id
 
   # Attach the IAM Profile
   iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
 
   user_data = local.ec2_user_data
+
+  tags = {
+    Name = "marketmate-docker-host-1"
+  }
+
+  depends_on = [aws_instance.nat_instance]
 }
 
 resource "aws_instance" "docker_host_2" {
-  ami             = data.aws_ssm_parameter.al2023_latest_kernel.value
-  instance_type   = "t3.micro"
-  security_groups = [aws_security_group.docker_app_flask_sg.name]
-  key_name        = "ec2-user-masterschool"
+  ami                    = data.aws_ssm_parameter.al2023_latest_kernel.value
+  instance_type          = "t3.micro"
+  vpc_security_group_ids = [aws_security_group.docker_app_flask_sg.id]
+  key_name               = "ec2-user-masterschool"
+  subnet_id              = aws_subnet.private_subnet_1b.id
 
   iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
 
   user_data = local.ec2_user_data
+
+  tags = {
+    Name = "marketmate-docker-host-1"
+  }
+
+  depends_on = [aws_instance.nat_instance]
 }
 
 # create security group for instances
 resource "aws_security_group" "docker_app_flask_sg" {
-  name        = "marketmate-app-sg"
-  vpc_id      = data.aws_vpc.default_vpc.id
+  name   = "marketmate-app-sg"
+  vpc_id = aws_vpc.marketmate_vpc.id
 
   # only allow inbound from the load balancer
   ingress {
@@ -140,12 +323,12 @@ resource "aws_security_group" "docker_app_flask_sg" {
     security_groups = [aws_security_group.load_balancer_sg.id]
   }
 
-  # allow inbound from my ip
+  # allow inbound from bastion
   ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["${local.my_public_ip}/32"]
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.nat_sg.id]
 
   }
 
@@ -159,10 +342,22 @@ resource "aws_security_group" "docker_app_flask_sg" {
   }
 }
 
+# DB Subnet Group
+resource "aws_db_subnet_group" "marketmate_db_subnet" {
+  name       = "marketmate-db-subnet-group"
+  subnet_ids = [aws_subnet.private_subnet_1a.id, aws_subnet.private_subnet_1b.id]
+
+  tags = {
+    Name = "marketmate-db-subnet-group"
+  }
+}
+
 resource "aws_db_instance" "marketmate_db" {
   identifier             = "marketmate-db"
   instance_class         = "db.t3.micro"
   vpc_security_group_ids = [aws_security_group.rds_sg.id]
+  db_subnet_group_name   = aws_db_subnet_group.marketmate_db_subnet.name
+  availability_zone      = "eu-central-1a"
 
   snapshot_identifier = "marketmate-db-pre-destroy-snapshot"
 
@@ -170,7 +365,7 @@ resource "aws_db_instance" "marketmate_db" {
   deletion_protection = false
 
   # snapshot management
-  skip_final_snapshot       = false
+  skip_final_snapshot       = true
   final_snapshot_identifier = "marketmate-db-pre-destroy-snapshot"
 
   # prevents 'terraform destroy'
@@ -180,8 +375,8 @@ resource "aws_db_instance" "marketmate_db" {
 }
 
 resource "aws_security_group" "rds_sg" {
-  name        = "marketmate-rds-sg"
-  vpc_id      = data.aws_vpc.default_vpc.id
+  name   = "marketmate-rds-sg"
+  vpc_id = aws_vpc.marketmate_vpc.id
 
   ingress {
     from_port       = 5432
@@ -196,16 +391,16 @@ resource "aws_s3_bucket" "avatars" {
   bucket = "marketmate-avatars"
 
   tags = {
-    Name        = "marketmate-avatars"
+    Name = "marketmate-avatars"
   }
 }
 
-resource "aws_s3_object" "logo" {
+resource "aws_s3_object" "avatars_bucket" {
   bucket = aws_s3_bucket.avatars.id
   key    = "avatars/user_default.png"
   source = "${local.project_root}/avatar/user_default.png"
   # check if file changed
-  etag   = filemd5("${local.project_root}/avatar/user_default.png")
+  etag = filemd5("${local.project_root}/avatar/user_default.png")
 }
 
 # set up load balancer
@@ -216,7 +411,7 @@ resource "aws_s3_object" "logo" {
 resource "aws_lb" "load_balancer" {
   name               = "marketmate-app-lb"
   load_balancer_type = "application"
-  subnets            = data.aws_subnets.default_subnet.ids
+  subnets            = [aws_subnet.public_subnet_1a.id, aws_subnet.public_subnet_1b.id]
   security_groups    = [aws_security_group.load_balancer_sg.id]
 }
 
@@ -292,10 +487,10 @@ resource "aws_lb_listener_rule" "block_list_2" {
 }
 
 resource "aws_lb_target_group" "web_app_tg" {
-  name     = "marketmate-app-tg"  
+  name     = "marketmate-app-tg"
   port     = 5000
   protocol = "HTTP"
-  vpc_id   = data.aws_vpc.default_vpc.id
+  vpc_id   = aws_vpc.marketmate_vpc.id
 
   health_check {
     path                = "/health"
@@ -325,10 +520,10 @@ resource "aws_lb_target_group_attachment" "docker_host_2" {
 }
 
 resource "aws_security_group" "load_balancer_sg" {
-  name        = "marketmate-lb-sg"
-  vpc_id      = data.aws_vpc.default_vpc.id
+  name   = "marketmate-lb-sg"
+  vpc_id = aws_vpc.marketmate_vpc.id
 
-  # Allow public HTTP (or your demo port)
+  # allow public HTTP (no HTTPS, because no DNS) 
   ingress {
     from_port   = 80
     to_port     = 80
