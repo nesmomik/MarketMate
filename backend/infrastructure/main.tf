@@ -44,11 +44,11 @@ variable "jwt_secret_key" {
   sensitive = true
 }
 
-variable "app_db_user" {
+variable "marketmate_db_user" {
   type = string
 }
 
-variable "app_db_name" {
+variable "marketmate_db_name" {
   type = string
 }
 
@@ -131,7 +131,7 @@ resource "aws_internet_gateway" "igw" {
 
 # nat instance and jump box to provide 
 # internet and ssh access to the docker hosts
-resource "aws_security_group" "nat_sg" {
+resource "aws_security_group" "nat_bastion_sg" {
   name   = "marketmate-nat-sg"
   vpc_id = aws_vpc.marketmate_vpc.id
 
@@ -166,7 +166,7 @@ resource "aws_instance" "nat_instance" {
   instance_type          = "t3.micro"
   key_name               = "ec2-user-masterschool"
   subnet_id              = aws_subnet.public_subnet_1a.id
-  vpc_security_group_ids = [aws_security_group.nat_sg.id]
+  vpc_security_group_ids = [aws_security_group.nat_bastion_sg.id]
   source_dest_check      = false
 
   user_data = <<-EOF
@@ -255,20 +255,20 @@ locals {
     systemctl enable docker
     usermod -a -G docker ec2-user
     aws ecr get-login-password --region ${data.aws_region.current.name} | docker login --username AWS --password-stdin ${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com
-    docker pull ${aws_ecr_repository.app_repo.repository_url}:latest
+    docker pull ${aws_ecr_repository.marketmate_repo.repository_url}:latest
     docker run -d \
       --name marketmate-app \
       -p 5000:5000 \
       -e S3_BUCKET_NAME=marketmate-avatars \
       -e S3_REGION=eu-central-1 \
       -e USE_S3_STORAGE=true \
-      -e POSTGRES_USER="${var.app_db_user}" \
+      -e POSTGRES_USER="${var.marketmate_db_user}" \
       -e POSTGRES_PASSWORD="${var.postgres_password}" \
-      -e POSTGRES_DB="${var.app_db_name}" \
+      -e POSTGRES_DB="${var.marketmate_db_name}" \
       -e POSTGRES_HOST="${aws_db_instance.marketmate_db.address}" \
       -e POSTGRES_PORT="5432" \
       -e JWT_SECRET_KEY="${var.jwt_secret_key}" \
-      "${aws_ecr_repository.app_repo.repository_url}:latest"
+      "${aws_ecr_repository.marketmate_repo.repository_url}:latest"
   EOF
 }
 
@@ -281,7 +281,7 @@ resource "aws_instance" "docker_host_1" {
   subnet_id              = aws_subnet.private_subnet_1a.id
 
   # Attach the IAM Profile
-  iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
+  iam_instance_profile = aws_iam_instance_profile.docker_host_profile.name
 
   user_data = local.ec2_user_data
 
@@ -299,7 +299,7 @@ resource "aws_instance" "docker_host_2" {
   key_name               = "ec2-user-masterschool"
   subnet_id              = aws_subnet.private_subnet_1b.id
 
-  iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
+  iam_instance_profile = aws_iam_instance_profile.docker_host_profile.name
 
   user_data = local.ec2_user_data
 
@@ -328,7 +328,7 @@ resource "aws_security_group" "docker_app_flask_sg" {
     from_port       = 22
     to_port         = 22
     protocol        = "tcp"
-    security_groups = [aws_security_group.nat_sg.id]
+    security_groups = [aws_security_group.nat_bastion_sg.id]
 
   }
 
@@ -540,7 +540,7 @@ resource "aws_security_group" "load_balancer_sg" {
 }
 
 # ecr repository
-resource "aws_ecr_repository" "app_repo" {
+resource "aws_ecr_repository" "marketmate_repo" {
   name                 = "marketmate-app"
   image_tag_mutability = "MUTABLE"
 
@@ -551,7 +551,7 @@ resource "aws_ecr_repository" "app_repo" {
 
 # keep only the last 5 images
 resource "aws_ecr_lifecycle_policy" "cleanup" {
-  repository = aws_ecr_repository.app_repo.name
+  repository = aws_ecr_repository.marketmate_repo.name
 
   policy = jsonencode({
     rules = [{
@@ -591,13 +591,14 @@ resource "aws_iam_policy" "s3_avatar_policy" {
   })
 }
 
+# attach S3 Read/Write policy to the  
 resource "aws_iam_role_policy_attachment" "s3_access_attachment" {
-  role       = aws_iam_role.marketmate_app_role.name
+  role       = aws_iam_role.docker_host_role.name
   policy_arn = aws_iam_policy.s3_avatar_policy.arn
 }
 
 # create iam role for the instances to fetch the container from ecr
-resource "aws_iam_role" "marketmate_app_role" {
+resource "aws_iam_role" "docker_host_role" {
   name = "marketmate-ec2-ecr-role"
 
   assume_role_policy = jsonencode({
@@ -616,18 +617,19 @@ resource "aws_iam_role" "marketmate_app_role" {
 
 # attach the standard ReadOnly policy
 resource "aws_iam_role_policy_attachment" "ecr_readonly" {
-  role       = aws_iam_role.marketmate_app_role.name
+  role       = aws_iam_role.docker_host_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
 # attach the SSM managed core policy for ssh access
 resource "aws_iam_role_policy_attachment" "ssm_managed" {
-  role       = aws_iam_role.marketmate_app_role.name
+  role       = aws_iam_role.docker_host_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 # create the instance profile 
-resource "aws_iam_instance_profile" "ec2_profile" {
+resource "aws_iam_instance_profile" "docker_host_profile" {
   name = "marketmate-ec2-profile"
-  role = aws_iam_role.marketmate_app_role.name
+  role = aws_iam_role.docker_host_role.name
+  
 }
