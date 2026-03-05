@@ -5,7 +5,7 @@ data "http" "my_public_ip" {
 
 locals {
   # chomp removes trailing new lines
-  my_public_ip  = chomp(data.http.my_public_ip.response_body)
+  my_public_ip = chomp(data.http.my_public_ip.response_body)
 }
 
 # create custom VPC

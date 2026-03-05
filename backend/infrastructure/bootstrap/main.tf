@@ -15,6 +15,11 @@ provider "aws" {
   region = "eu-central-1"
 }
 
+locals {
+  # IMPORTANT: set backend root relative to the location of the main.tf file 
+  project_root = abspath("${path.root}/../..")
+}
+
 # resource type: aws_s3_bucket
 # local resource name: terraform_state
 resource "aws_s3_bucket" "terraform_state" {
@@ -81,3 +86,21 @@ resource "aws_ecr_lifecycle_policy" "cleanup" {
     }]
   })
 }
+
+# create S3 bucket
+resource "aws_s3_bucket" "avatars" {
+  bucket = "marketmate-avatars"
+
+  tags = {
+    Name = "marketmate-avatars"
+  }
+}
+
+resource "aws_s3_object" "avatars_bucket" {
+  bucket = aws_s3_bucket.avatars.id
+  key    = "avatars/user_default.png"
+  source = "${local.project_root}/avatar/user_default.png"
+  # check if file changed
+  etag = filemd5("${local.project_root}/avatar/user_default.png")
+}
+

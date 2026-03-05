@@ -13,6 +13,11 @@ data "aws_ecr_repository" "marketmate_repo" {
   name = "marketmate-app"
 }
 
+# get already existing s3 bucket 
+data "aws_s3_bucket" "avatars" {
+  bucket = "marketmate-avatars"
+}
+
 # nat instance and jump box to provide 
 # internet and ssh access to the docker hosts
 resource "aws_instance" "nat_instance" {
@@ -46,8 +51,6 @@ resource "aws_instance" "nat_instance" {
 
 # local variables for docker hosts
 locals {
-  # set project root relative to the location of the main.tf file 
-  project_root = abspath("${path.root}/..")
   ec2_user_data = <<-EOF
     #!/bin/bash
     until curl -sS --connect-timeout 5 https://google.com > /dev/null; do
@@ -173,8 +176,8 @@ resource "aws_iam_policy" "s3_avatar_policy" {
           "s3:ListBucket"
         ]
         Resource = [
-          "${aws_s3_bucket.avatars.arn}",
-          "${aws_s3_bucket.avatars.arn}/*"
+          "${data.aws_s3_bucket.avatars.arn}",
+          "${data.aws_s3_bucket.avatars.arn}/*"
         ]
       }
     ]
