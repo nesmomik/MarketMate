@@ -14,6 +14,12 @@ data "http" "my_public_ip" {
   url = "https://checkip.amazonaws.com"
 }
 
+# get already existing ecr repository
+data "aws_ecr_repository" "marketmate_repo" {
+  name = "marketmate-app"
+}
+
+
 # local variables
 locals {
   # set project root relative to the location of the main.tf file 
@@ -32,7 +38,7 @@ locals {
     systemctl enable docker
     usermod -a -G docker ec2-user
     aws ecr get-login-password --region ${data.aws_region.current.name} | docker login --username AWS --password-stdin ${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com
-    docker pull ${aws_ecr_repository.marketmate_repo.repository_url}:latest
+    docker pull ${data.aws_ecr_repository.marketmate_repo.repository_url}:latest
     docker run -d \
       --name marketmate-app \
       -p 5000:5000 \
@@ -45,6 +51,6 @@ locals {
       -e POSTGRES_HOST="${aws_db_instance.marketmate_db.address}" \
       -e POSTGRES_PORT="5432" \
       -e JWT_SECRET_KEY="${var.jwt_secret_key}" \
-      "${aws_ecr_repository.marketmate_repo.repository_url}:latest"
+      "${data.aws_ecr_repository.marketmate_repo.repository_url}:latest"
   EOF
 }

@@ -18,7 +18,7 @@ provider "aws" {
 # resource type: aws_s3_bucket
 # local resource name: terraform_state
 resource "aws_s3_bucket" "terraform_state" {
-  bucket = "marketmate-tf-state"
+  bucket        = "marketmate-tf-state"
   force_destroy = true
 }
 
@@ -50,4 +50,34 @@ resource "aws_dynamodb_table" "terraform_locks" {
     name = "LockID"
     type = "S"
   }
+}
+
+# ecr repository
+resource "aws_ecr_repository" "marketmate_repo" {
+  name                 = "marketmate-app"
+  image_tag_mutability = "MUTABLE"
+  force_delete         = true
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+# keep only the last 4 images
+resource "aws_ecr_lifecycle_policy" "cleanup" {
+  repository = aws_ecr_repository.marketmate_repo.name
+
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 0
+      selection = {
+        tagStatus   = "any"
+        countType   = "imageCountMoreThan"
+        countNumber = 4
+      }
+      action = {
+        type = "expire"
+      }
+    }]
+  })
 }
