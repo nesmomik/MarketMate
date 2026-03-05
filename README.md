@@ -4,11 +4,6 @@
  
 ## Educational project to learn cloud topics 
 - [AWS infrastructure](#aws-infrastructure)
-    - EC2
-    - S3
-    - RDS
-    - DynamoDB
-    - ECR
 - [Docker](#docker)
 - [Terraform](#terraform)
 
@@ -66,153 +61,144 @@ graph TD
     Docker2 -- Get/Put Images --> S3
 ```
 
+### Compute
+
+All three instances are configured with a startup script. The scripts are passed to the instances on start up and executed after boot. On a docker host the script installs Docker, pulls the application image and runs it. Environment variables are passed on to the application in the container as command line variables. On the NAT instance the script enables IP forwarding, installs iptables and configures the firewall to let the NAT instance act as a router with network address translation (NAT).
+
 ### Networking
-- Custom VPC spanning two availability zones (eu-central-1a, eu-central-1b) with:
-    - public subnets for the Application Load Balancer and NAT/Bastion instance
-    - private subnets for the docker hosts
-    - DB subnet group spanning both private subnets for the RDS instance
-    - Each subnet has to be linked to a route table, and a subnet can only be linked to one route table. On the other hand, one route table can have associations with multiple subnets. Every VPC has a default route table, and it is a good practice to leave it in its original state and create a new route table to customize the network traffic routes associated with your VPC. 
-    
+
+Overall the architecture tries to resemble a production environment by implementing a multi-tier setup. For this a custom virtual private network (VPC) is created spanning two availability zones (AZs) with a public and private subnet in each AZ. A Load Balancer (LB) is deployed across both public subnets and forwards HTTP requests to the Docker hosts. Each Docker host lives in a private subnet. The RDS PostrgreSQL instance lives in a subnet group that spans both private subnets. The NAT instance needs to be in a public subnet.
+
+#### Route Tables
+Each subnet has to be linked to a route table. For this a public and a private route table is created. The private route table routes internet traffic through the NAT instance. The public route table routes internet traffic to the internet gateway.
+
 ``` mermaid
 graph TD
-    %% Internet Connection
-    Internet((🌐 The Internet))
-    IGW[🚪 Internet Gateway]
 
-    %% VPC Definition
-    subgraph VPC [🏰 VPC: 10.0.0.0/16]
-        direction TB
+%% ---------------- EDGE LAYER ----------------
+subgraph Edge[Edge]
+direction LR
+Internet((🌍 Internet))
+IGW[🚪 Internet Gateway]
+LB[⚖️ Load Balancer <br/> deployed acrros both public subnets]
+end
 
-        %% Route Tables
-        PublicRT[🔀 Public Route Table <br/> 0.0.0.0/0 -> IGW]
-        PrivateRT[🔀 Private Route Table <br/> 0.0.0.0/0 -> NAT Instance]
+%% ---------------- VPC ----------------
+subgraph VPC[🏰 VPC 10.0.0.0/16]
+direction TB
 
-        %% Public Subnets
-        subgraph PublicZone [🌍 Public Zone]
-            direction LR
-            subgraph Public [🌍 Public Zone]
-                PubSub1A[🟩 Public Subnet 1a <br/> 10.0.1.0/24 <br/> eu-central-1a]
-                NAT[🛡️ NAT Instance <br/> 'marketmate-nat-instance']
-            end
-            subgraph Publiic [🌍 Public Zone]
-                PubSub1B[🟩 Public Subnet 1b <br/> 10.0.2.0/24 <br/> eu-central-1b]
-            end 
-        end
+%% ROUTING
+subgraph Routing[Routing]
+direction LR
+PublicRT[🧭 Public Route Table]
+PrivateRT[🧭 Private Route Table]
+end
 
-        %% Private Subnets
-        subgraph PrivateZone [🔒 Private Zone]
-            direction LR
-            PrivSub1A[🟥 Private Subnet 1a <br/> 10.0.11.0/24 <br/> eu-central-1a]
-            PrivSub1B[🟥 Private Subnet 1b <br/> 10.0.12.0/24 <br/> eu-central-1b]
-            
-            %% Key Components in Private Subnets
-            Docker1[🐳 Docker Host 1]
-            Docker2[🐳 Docker Host 2]
-        end
+%% PUBLIC TIER
+subgraph PublicTier[🌐 Public Subnets]
+direction LR
 
-        %% Physical Placements
-        PubSub1A -. Contains .-> NAT
-        PrivSub1A -. Contains .-> Docker1
-        PrivSub1B -. Contains .-> Docker2
+subgraph PublicA[🧱 Subnet 10.0.1.0/24 AZ-a]
+NAT[🔁 NAT Instance]
+end
 
-        %% Routing Associations
-        PublicRT ==>|Routes Traffic For| PubSub1A
-        PublicRT ==>|Routes Traffic For| PubSub1B
-        
-        PrivateRT ==>|Routes Traffic For| PrivSub1A
-        PrivateRT ==>|Routes Traffic For| PrivSub1B
-    end
+subgraph PublicB[🧱 Subnet 10.0.2.0/24 AZ-b]
+PubSpacer[ ]:::invisible
+end
 
-    %% External Connections
-    Internet <--> IGW
-    IGW <--> PublicRT
-    
-    %% Internal Routing Flows
-    NAT -->|Outbound NAT Traffic| PublicRT
-    PrivateRT -->|0.0.0.0/0| NAT
+end
 
+%% PRIVATE TIER
+subgraph PrivateTier[🔒 Private Subnets]
+direction LR
+
+subgraph PrivateA[🧱 Subnet 10.0.11.0/24 AZ-a]
+Docker1[🐳 Docker Host 1]
+end
+
+subgraph PrivateB[🧱 Subnet 10.0.12.0/24 AZ-b]
+Docker2[🐳 Docker Host 2]
+end
+
+end
+
+end
+
+%% ---------------- FLOWS ----------------
+
+%% Internet to Edge
+Internet <--> IGW
+Internet <--> LB
+
+%% Edge to Routing
+IGW <--> PublicRT
+
+%% Routing to Subnets
+PublicRT ==>|Routes Traffic For| PublicA
+PublicRT ==>|Routes Traffic For| PublicB
+
+PrivateRT ==>|Routes Traffic For| PrivateA
+PrivateRT ==>|Routes Traffic For| PrivateB
+
+%% Load Balancer to Private Hosts
+LB <-->|HTTP| Docker1
+LB <-->|HTTP| Docker2
+
+%% NAT and PrivateRT
+PrivateRT -->|0.0.0.0/0| NAT
+NAT -->|Outbound NAT Traffic| PublicRT
+
+%% ---------------- STYLES ----------------
+classDef invisible fill:none,stroke:none,color:transparent;
+class PubSpacer invisible;
+
+%% Make the Edge subgraph transparent
+class Edge invisible;
 ```
-- security groups:
-    - docker_app_flask_sg
-        - ingress: "5000/tcp/load_balancer_sg"
-        - ingress: "22/tcp/net_bastion_sg"
-        - egress: "all/-1/0.0.0.0/0"
-    - nat_bastion_sg
-        - ingress: "5000/tcp/0.0.0.0/0"
-        - ingress: "22/tcp/{dev_public_ip}/32"
-        - egress: "all/-1/nat_bastion_sg"
-    - rds_sg
-        - ingress: "5432/tcp/docker_app_flask_sg"
-    - load_balancer_sg
-        - ingress: "80/tcp/0.0.0.0/0"
-        - egress: "all/-1/0.0.0.0/0"
+#### Security Groups
+
+Security groups act as external firewalls. They enforce the principle of Least-Privilege for both incoming and outgoing traffic. Instead of specifiying IP addresses as allowed traffic source, it is also possible to specify other security groups as source. For this a security group for every network device is created and then used to allow traffic where needed limited to the required ports.
 
 ``` mermaid
 graph TD
-    %% External Entities
-    Developer[👨‍💻 Developer's IP <br/> local.my_public_ip/32]
-    Internet[🌐 The Internet <br/> 0.0.0.0/0]
-    VPC_CIDR[🏰 Entire VPC <br/> 10.0.0.0/16]
+    %% External
+    Developer[👨‍💻 Developer IP]
+    Internet[🌐 The Internet]
+    VPC_CIDR[🏰 Entire VPC]
 
     %% Security Groups
-    subgraph SG_ALB [ALB Security Group <br/> 'lb-sg']
+    subgraph SG_ALB [ALB SG]
         ALB[Application Load Balancer]
     end
 
-    subgraph SG_NAT [NAT / Bastion Security Group <br/> 'nat-bastion-sg']
-        NAT[NAT / Bastion Instance]
+    subgraph SG_NAT [NAT/Bastion SG]
+        NAT[NAT/Bastion Instance]
     end
 
-    subgraph SG_APP [Docker Hosts Security Group <br/> 'app-sg']
+    subgraph SG_APP [Docker Hosts SG]
         Docker[Docker Hosts 1 & 2]
     end
 
-    subgraph SG_RDS [RDS Security Group <br/> 'rds-sg']
-        RDS[PostgreSQL Database]
+    subgraph SG_RDS [RDS SG]
+        RDS[PostgreSQL DB]
     end
 
-    %% ==========================================
-    %% INGRESS RULES (What's allowed IN)
-    %% ==========================================
-    
-    %% ALB Ingress
-    Internet -- "['lb-sg']<br/>Ingress: Port 80 (HTTP)" --> SG_ALB
-    
-    %% NAT/Bastion Ingress
-    Developer -- "['nat-bastion-sg']<br/>Ingress: Port 22 (SSH)" --> SG_NAT
-    VPC_CIDR -- "['nat-bastion-sg']<br/>Ingress: All Traffic (-1)" --> SG_NAT
-    
-    %% Docker Hosts Ingress
-    SG_ALB -- "['app-sg']<br/>Ingress: Port 5000 (TCP)" --> SG_APP
-    SG_NAT -- "['app-sg']<br/>Ingress: Port 22 (SSH)" --> SG_APP
-    
-    %% RDS Ingress
-    SG_APP -- "['rds-sg']<br/>Ingress: Port 5432 (Postgres)" --> SG_RDS
+    %% Ingress
+    Internet -->|"Port 80"| ALB
+    Developer -->|"Port 22"| NAT
+    VPC_CIDR -->|"All Traffic"| NAT
+    ALB -->|"Port 5000"| Docker
+    NAT -->|"Port 22"| Docker
+    Docker -->|"Port 5432"| RDS
 
-
-    %% ==========================================
-    %% EGRESS RULES (What's allowed OUT)
-    %% ==========================================
-    
-    %% Outbound connections
-    SG_ALB -. "['lb-sg']<br/>Egress: All Traffic (0.0.0.0/0)" .-> Internet
-    SG_NAT -. "['nat-bastion-sg']<br/>Egress: All Traffic (0.0.0.0/0)" .-> Internet
-    SG_APP -. "['app-sg']<br/>Egress: All Traffic (0.0.0.0/0)" .-> Internet
-    
-
-    %% Styling
-    classDef sg fill:#f9f9f9,stroke:#333,stroke-width:2px,stroke-dasharray: 5 5;
-    class SG_ALB,SG_NAT,SG_APP,SG_RDS sg;
-    
-    classDef external fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
-    class Developer,Internet,VPC_CIDR external;
+    %% Egress
+    ALB -.-> Internet
+    NAT -.-> Internet
+    Docker -.-> NAT
 ```
 
 ### Permission Management
-- IAM policies attached to the docker hosts:
-    - S3 get/put/list
-    - ECR read only
-    - Systems Manager
+The docker hosts consume resources of other AWS services. They need to download the docker image from the ECR repository and they need to be able to read and write to an S3 bucket. For this an Identity and Access Management (IAM) role is created and the required IAM policy is attached.
 
 ## Docker
 
