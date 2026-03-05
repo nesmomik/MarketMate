@@ -54,10 +54,10 @@ resource "aws_security_group" "docker_app_flask_sg" {
   # cant omit egress rule in terraform 
   # needed for fetching frontend zip and docker images
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port       = 0
+    to_port         = 0
+    protocol        = "-1"
+    security_groups = [aws_security_group.nat_bastion_sg.id]
   }
 }
 
