@@ -2,6 +2,7 @@
 # the load balancer is the entry point
 # - looks at the request path and decides what to do with the incoming traffic
 #   according to matching listener rules and their priority
+# - forwards regular traffic to the docker host target group
 
 resource "aws_lb" "load_balancer" {
   name               = "marketmate-app-lb"
@@ -35,7 +36,7 @@ resource "aws_lb_listener_rule" "instances" {
   }
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.web_app_tg.arn
+    target_group_arn = aws_lb_target_group.docker_host_tg.arn
   }
 }
 
@@ -81,7 +82,7 @@ resource "aws_lb_listener_rule" "block_list_2" {
   }
 }
 
-resource "aws_lb_target_group" "web_app_tg" {
+resource "aws_lb_target_group" "docker_host_tg" {
   name     = "marketmate-app-tg"
   port     = 5000
   protocol = "HTTP"
@@ -102,34 +103,15 @@ resource "aws_lb_target_group" "web_app_tg" {
   }
 }
 
+# attach the docker hosts to the target group
 resource "aws_lb_target_group_attachment" "docker_host_1" {
-  target_group_arn = aws_lb_target_group.web_app_tg.arn
+  target_group_arn = aws_lb_target_group.docker_host_tg.arn
   target_id        = aws_instance.docker_host_1.id
   port             = 5000
 }
 
 resource "aws_lb_target_group_attachment" "docker_host_2" {
-  target_group_arn = aws_lb_target_group.web_app_tg.arn
+  target_group_arn = aws_lb_target_group.docker_host_tg.arn
   target_id        = aws_instance.docker_host_2.id
   port             = 5000
-}
-
-resource "aws_security_group" "load_balancer_sg" {
-  name   = "marketmate-lb-sg"
-  vpc_id = aws_vpc.marketmate_vpc.id
-
-  # allow public HTTP (no HTTPS, because no DNS) 
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 }
