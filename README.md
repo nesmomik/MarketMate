@@ -2,16 +2,16 @@
 
 > More documentation at the upstream repository:  [AWS_grocery](https://github.com/AlejandroRomanIbanez/AWS_grocery)
  
-## Educational project to learn cloud topics 
-- [AWS infrastructure](#aws-infrastructure)
-- [Docker](#docker)
-- [Terraform](#terraform)
+## Educational project to learn devops topics 
+- Cloud: [Amazon Web Services (AWS)](#amazon-web-services-aws)
+- Containerization: [Docker](#containerization-docker)
+- Infrastructure as Code: [Terraform](#infrastructure-as-code-terraform)
 
 ## Summary
 
 MarketMate is an educational e-commerce platform based on the Python Flask and Javascript React Framework. The goal of the project was to deploy a development environment for the e-commerce platform on AWS. It was implemented by packaging the app in a docker container, deploying it on two EC2 instances in private subnets behind a Load Balancer und connecting them to a RDS PostgreSQL instance in a private subnet group. Container Images are pulled automatically from an ECR repository and user images are stored in a S3 bucket. An additional instance acts as a NAT instance to allow internet access for the docker host and as a jump box to allow SSH access to the docker hosts. The usage of Terraform to define the infrastructure as code simplifies the creation and destruction of the development environment.
 
-## AWS infrastructure
+## Amazon Web Services (AWS) 
 
 ### Overview
 - three EC2 compute t3.micro instances with latest Amazon Linux 2023 AMIx86-64
@@ -198,9 +198,29 @@ graph TD
 ```
 
 ### Permission Management
-The docker hosts consume resources of other AWS services. They need to download the docker image from the ECR repository and they need to be able to read and write to an S3 bucket. For this an Identity and Access Management (IAM) role is created and the required IAM policy is attached.
+The docker hosts consume resources of other AWS services. They need to download the docker image from the ECR repository and they need to be able to read and write to an S3 bucket. For this an Identity and Access Management (IAM) role is created and the required IAM policy is attached to the docker hosts.
 
-## Docker
+For managing the infrastructure for this project access to the AWS command line interface (AWS CLI) is necessary. The recommended way of using AWS CLI is with AWS Single Sign On (AWS SSO, now called AWS IAM Identity Center). Mainly designed for organisations, it is also possible to enable an account instance of IAM Identity Center for a single user account. The process is described [here](/docs/aws_sso.md). The advantage of this method is that only a temporary session token is saved locally and not any long-term credentials.
 
+## Containerization: Docker
+To simplify the deployment of the app, it is deployed as a Docker container. The container gets build from the latest app version on the developer machine and is then pushed to the container repository (ECR) on AWS. The commands to build, tag and run a container are documented [here](/docs/docker.md).
 
-## Terraform
+To build the container a two stage system is implemented. The first stage pre-compiles the python files and creates a virtual environment. The second stage starts with a smaller base image and the app files and the prepared virtual environment to run the app gets copied into the base image. This process is documented in the [Dockerfile](/backend/Dockerfile)
+```
+Stage 1 container filesystem
+(image with uv installed)
+└── /app
+    ├── .venv
+    └── source code
+
+↓ committed as intermediate image
+COPY --from=builder /app/.venv /app/.venv
+
+Stage 2 container filesystem
+(base slim image)
+└── /app
+    ├── .venv
+    └── source code
+```
+
+## Infrastructure as Code: Terraform
