@@ -71,7 +71,7 @@ locals {
       -e S3_REGION=eu-central-1 \
       -e USE_S3_STORAGE=true \
       -e POSTGRES_USER="${var.marketmate_db_user}" \
-      -e POSTGRES_PASSWORD="${var.postgres_password}" \
+      -e POSTGRES_PASSWORD="${var.marketmate_db_pass}" \
       -e POSTGRES_DB="${var.marketmate_db_name}" \
       -e POSTGRES_HOST="${aws_db_instance.marketmate_db.address}" \
       -e POSTGRES_PORT="5432" \
@@ -112,7 +112,7 @@ resource "aws_instance" "docker_host_2" {
   user_data = local.ec2_user_data
 
   tags = {
-    Name = "marketmate-docker-host-1"
+    Name = "marketmate-docker-host-2"
   }
 
   depends_on = [aws_instance.nat_instance]

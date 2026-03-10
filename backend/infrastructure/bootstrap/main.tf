@@ -15,8 +15,32 @@ provider "aws" {
   region = "eu-central-1"
 }
 
+## handle secrets
+
+# input variables stored in terraform.tfvars
+variable "marketmate_db_pass" {
+  type = string
+  # hides the value in console outputs
+  sensitive = true
+}
+
+variable "jwt_secret_key" {
+  type      = string
+  sensitive = true
+}
+
+variable "marketmate_db_user" {
+  type = string
+}
+
+variable "marketmate_db_name" {
+  type = string
+}
+
+## setup S3 for statefile management and avatar storage
+
+# needed for copying of avatar default image
 locals {
-  # IMPORTANT: set backend root relative to the location of the main.tf file 
   project_root = abspath("${path.root}/../..")
 }
 
@@ -46,47 +70,6 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state_c
   }
 }
 
-# terraform backend looks for LockID of type string
-resource "aws_dynamodb_table" "terraform_locks" {
-  name         = "terraform-state-locking"
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "LockID"
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-}
-
-# ecr repository
-resource "aws_ecr_repository" "marketmate_repo" {
-  name                 = "marketmate-app"
-  image_tag_mutability = "MUTABLE"
-  force_delete         = true
-
-  image_scanning_configuration {
-    scan_on_push = true
-  }
-}
-
-# keep only the last 4 images
-resource "aws_ecr_lifecycle_policy" "cleanup" {
-  repository = aws_ecr_repository.marketmate_repo.name
-
-  policy = jsonencode({
-    rules = [{
-      rulePriority = 0
-      selection = {
-        tagStatus   = "any"
-        countType   = "imageCountMoreThan"
-        countNumber = 4
-      }
-      action = {
-        type = "expire"
-      }
-    }]
-  })
-}
-
 # create S3 bucket
 resource "aws_s3_bucket" "avatars" {
   bucket = "marketmate-avatars"
@@ -103,4 +86,48 @@ resource "aws_s3_object" "avatars_bucket" {
   # check if file changed
   etag = filemd5("${local.project_root}/avatar/user_default.png")
 }
+
+## lockfile stored in dynamodb table
+
+# terraform backend looks for LockID of type string
+resource "aws_dynamodb_table" "terraform_locks" {
+  name         = "terraform-state-locking"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "LockID"
+  attribute {
+    name = "LockID"
+    type = "S"
+  }
+}
+
+## create ecr repository for app images
+resource "aws_ecr_repository" "marketmate_repo" {
+  name                 = "marketmate-app"
+  image_tag_mutability = "MUTABLE"
+  force_delete         = false
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+# keep only the last 5 images
+resource "aws_ecr_lifecycle_policy" "cleanup" {
+  repository = aws_ecr_repository.marketmate_repo.name
+
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      selection = {
+        tagStatus   = "any"
+        countType   = "imageCountMoreThan"
+        countNumber = 5
+      }
+      action = {
+        type = "expire"
+      }
+    }]
+  })
+}
+
 

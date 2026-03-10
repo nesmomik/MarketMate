@@ -1,4 +1,4 @@
-postgres_password = <postgres_password>
-marketmate_db_user       = <marketmate_db_user>
-marketmate_db_name       = <marketmate_db_name>
-jwt_secret_key    = <jwt_secret_key>
+marketmate_db_pass      = <marketmate_db_pass>
+marketmate_db_user      = <marketmate_db_user>
+marketmate_db_name      = <marketmate_db_name>
+jwt_secret_key          = <jwt_secret_key>

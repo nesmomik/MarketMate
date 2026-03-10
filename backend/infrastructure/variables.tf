@@ -1,12 +1,7 @@
 # input variables stored in terraform.tfvars
-variable "postgres_password" {
+variable "marketmate_db_pass" {
   type = string
   # hides the value in console outputs
-  sensitive = true
-}
-
-variable "jwt_secret_key" {
-  type      = string
   sensitive = true
 }
 
@@ -16,4 +11,9 @@ variable "marketmate_db_user" {
 
 variable "marketmate_db_name" {
   type = string
+}
+
+variable "jwt_secret_key" {
+  type      = string
+  sensitive = true
 }

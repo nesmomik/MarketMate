@@ -5,7 +5,7 @@ resource "aws_db_instance" "marketmate_db" {
   db_subnet_group_name   = aws_db_subnet_group.marketmate_db_subnet.name
   availability_zone      = "eu-central-1a"
 
-  snapshot_identifier = "marketmate-db-pre-destroy-snapshot"
+  snapshot_identifier = "marketmate-seed-snapshot-final"
 
   # prevents deletion via console or API
   deletion_protection = false
