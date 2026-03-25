@@ -34,7 +34,7 @@ resource "aws_security_group" "docker_app_flask_sg" {
   name   = "marketmate-app-sg"
   vpc_id = aws_vpc.marketmate_vpc.id
 
-  # only allow inbound from the load balancer
+  # allow inbound http from the load balancer
   ingress {
     from_port       = 5000
     to_port         = 5000
@@ -42,22 +42,21 @@ resource "aws_security_group" "docker_app_flask_sg" {
     security_groups = [aws_security_group.load_balancer_sg.id]
   }
 
-  # allow inbound from bastion
+  # allow inbound ssh from bastion
   ingress {
     from_port       = 22
     to_port         = 22
     protocol        = "tcp"
     security_groups = [aws_security_group.nat_bastion_sg.id]
-
   }
 
   # cant omit egress rule in terraform 
   # needed for fetching frontend zip and docker images
   egress {
-    from_port       = 0
-    to_port         = 0
-    protocol        = "-1"
-    security_groups = [aws_security_group.nat_bastion_sg.id]
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 }
 
