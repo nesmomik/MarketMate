@@ -205,22 +205,116 @@ For managing the infrastructure for this project access to the AWS command line 
 ## Containerization: Docker
 To simplify the deployment of the app, it is deployed as a Docker container. The container gets build from the latest app version on the developer machine and is then pushed to the container repository (ECR) on AWS. The commands to build, tag and run a container are documented [here](/docs/docker.md).
 
-To build the container a two stage system is implemented. The first stage pre-compiles the python files and creates a virtual environment. The second stage starts with a smaller base image and the app files and the prepared virtual environment to run the app gets copied into the base image. This process is documented in the [Dockerfile](/backend/Dockerfile)
-```
-Stage 1 container filesystem
-(image with uv installed)
-└── /app
-    ├── .venv
-    └── source code
+To build the container a two stage system is implemented. The first stage pre-compiles the python files and creates a virtual environment (vendor dependencies). The second stage starts with a smaller base image and then the app files and the prepared virtual environment to run the app get copied into the base image. This process is documented in the [Dockerfile](/backend/Dockerfile)
+``` mermaid
+flowchart TD
 
-↓ committed as intermediate image
-COPY --from=builder /app/.venv /app/.venv
+    subgraph S1["Build Image"]
+        subgraph C1["large base image"]
+            V1[".venv (dependencies)"]
+            SC1["source code"]
+            BuildDeps["build tools"]
+        end
+    end
 
-Stage 2 container filesystem
-(base slim image)
-└── /app
-    ├── .venv
-    └── source code
+    M["COPY"]
+
+    subgraph S2["Final Image"]
+        subgraph C2["slim base image"]
+            V2[".venv"]
+            SC2["source code"]
+        end
+    end
+
+    V1 --> M --> V2
+
+    %% dim unused components
+    style BuildDeps fill:#eeeeee,color:#999999, stroke:#dddddd
 ```
 
 ## Infrastructure as Code: Terraform
+
+### Overview
+
+Infrastructure as Code (IaC) allows to provision and manage infrastructure through automated scripts. For this project the most popular IaC software tool named Terraform was chosen. It uses a declarative language called HCL to define the desired state of the infrastructure. The Terraform executable is used to implement the changes to achieve the desired state.
+
+#### Main advantages
+- infrastructure creation is completely automated
+- configuration changes are transparent through version control and easily reversible
+
+#### General sequence of commands to create infrastructure with Terraform
+1. terraform init: init project
+2. terraform plan: checks your configuration against the current state and generates a plan
+3. terraform apply: applies the plan to create or update your infrastructure, creates the state file
+4. terraform destroy: removes resources, when no longer needed
+
+### IaC specific features
+- self-managed state file backend (AWS)
+- environment secrets stored in separate 'terraform.tfvars' file 
+- uses AWS as data source for:
+    - latest Amazon Linux 2023 image version
+    - current AWS region
+    - account ID
+    - AWS ECR repository
+    - AWS S3 bucket (user images)
+    - public ip of developer
+- uses local variables for instance user_data
+- added console output for testing:
+    - load balancer dns name
+    - docker host 1 private ip
+    - docker host 2 private ip
+    - nat instance public ip
+- ALB listener rule to block the most common malicious patterns to keep the log clean
+- HCL code split up in logical units
+
+### Implementation
+
+To set up the required infrastructure with Terraform a multi-stage process is required. The first bootstrap stage creates the initial AWS environment for Terraform and the Docker container, the second bootstrap stage creates a snapshot of the PostgreSQL database, which is then used in the last stage to deploy the complete development environment. All required steps and console inputs are documented [here](/docs/deployment.md).
+
+``` mermaid
+
+flowchart TD
+
+    subgraph Stage1["Bootstrap Environment"]
+        subgraph Stage1Row["Initialize"]
+            S3State["S3 Bucket (state file)"]
+            DynamoLock["DynamoDB Table (lock file)"]
+            S3Images["S3 bucket (user images)"]
+            ECRRepo["ECR Repo (docker images)"]
+        end
+    end
+
+    subgraph Stage2["Bootstrap Database"]
+        subgraph Stage2Row["Seed DB with AWS Lambda"]
+            direction LR
+            Create["Create empty RDS instance"]
+            Seed["Execute Python Script"]
+            Snapshot["Create RDS snapshot"]
+            Create --> Seed --> Snapshot
+        end
+    end
+
+    subgraph Stage3["Deploy Dev Environment"]
+        subgraph Row1["Logical Files"]
+            Main["Main"]
+            Compute["Compute"]
+            Database["Database"]
+            Networking["Networking"]
+            LoadBalancer["Load Balancer"]
+            SecurityGroups["Security Groups"]
+            Variables["Variables"]
+            Outputs["Outputs"]
+        end
+    end
+
+    %% Connect stages with single arrows
+    Stage1 --> Stage2 --> Stage3
+```
+
+After the third stage is completed, four values are displayed in the console output.
+- load balancer dns name
+- private IP address of docker host 1
+- private IP address of docker host 2
+- public IP address of NAT instance
+
+The public ip address of the NAT instance can be used together with a private IP address of a docker host to access the docker hosts via SHH. The load balancer dns name can be used to access the MarketMate online shop.

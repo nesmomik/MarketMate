@@ -9,6 +9,9 @@
 # secrets
 terraform.tfvars
 
+# Lambda Seeder build
+lambda_function.zip
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

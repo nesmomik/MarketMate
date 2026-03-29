@@ -6,6 +6,7 @@
  --password-stdin <aws_account_id>.dkr.ecr.<region>.amazonaws.com`
 ## 3. Build the image
 `docker build -t marketmate-app .`
+| Important: These steps can only be applied once the first bootstrap phase of the infrastructure creation with terraform is done
 ## 4. Tag image so Docker knows where to push it
 `docker tag marketmate-app:latest <aws_account_id>.dkr.ecr.<region>.amazonaws.com/marketmate-app:latest`
 ## 5. Login to AWS to allow pushing the container to ECR
