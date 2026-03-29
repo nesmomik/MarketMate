@@ -1,6 +1,6 @@
 # this configuration file bootstraps the remote statefile management
 # - creates a versioned and encrypted S3 bucket
-# - creates a dynamodb table with on key-value pair
+# - creates a dynamodb table with one key-value pair
 
 terraform {
   required_providers {
@@ -13,28 +13,6 @@ terraform {
 
 provider "aws" {
   region = "eu-central-1"
-}
-
-## handle secrets
-
-# input variables stored in terraform.tfvars
-variable "marketmate_db_pass" {
-  type = string
-  # hides the value in console outputs
-  sensitive = true
-}
-
-variable "jwt_secret_key" {
-  type      = string
-  sensitive = true
-}
-
-variable "marketmate_db_user" {
-  type = string
-}
-
-variable "marketmate_db_name" {
-  type = string
 }
 
 ## setup S3 for statefile management and avatar storage
