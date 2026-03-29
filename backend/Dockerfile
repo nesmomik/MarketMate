@@ -15,15 +15,14 @@ RUN uv sync --frozen --no-install-project --no-dev
 # 2. create final image
 # switch to the standard slim image
 FROM python:3.11-slim-bookworm
-# create a non-root user for security
 WORKDIR /app
 # copy the virtual environment from the builder stage
-# change ownership to our non-root user
 COPY --from=builder /app/.venv /app/.venv
 # copy only the necessary files 
 COPY app/ ./app/
 COPY main.py .
-# set the PATH to the virtual environment
+# set the operationg system PATH to the virtual environment
 ENV PATH="/app/.venv/bin:$PATH"
+# set the path for the python interpreter
 ENV PYTHONPATH="/app/.venv/lib/python3.11/site-packages"
 CMD ["/app/.venv/bin/python", "main.py"]
